@@ -1,0 +1,83 @@
+# PowerShell
+*.ps1xml
+*.psd1
+
+# Logs
+*.log
+logs/
+*.txt.log
+
+# Output-Dateien
+output/
+reports/
+*.csv
+*.json
+*.html
+*.xml
+
+# Backup-Dateien
+*.bak
+*.backup
+*~
+
+# Temporäre Dateien
+*.tmp
+temp/
+tmp/
+
+# Konfigurationsdateien mit sensiblen Daten
+config.json
+settings.json
+credentials.json
+*.config.local
+
+# Umgebungsvariablen
+.env
+.env.local
+.env.*.local
+
+# IDE und Editor-Dateien
+.vscode/
+.vs/
+.idea/
+*.swp
+*.swo
+*~
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Test-Ergebnisse
+TestResults/
+*.trx
+coverage/
+
+# PowerShell Module
+PSGetModuleInfo.xml
+
+# Lokale Entwicklungsdateien
+scratch/
+sandbox/
+test-output/
+
+# Zertifikate und Schlüssel
+*.pfx
+*.cer
+*.key
+*.pem
+
+# Archiv-Dateien
+*.zip
+*.7z
+*.tar
+*.gz

@@ -1,45 +1,150 @@
-# Invoke-DHCPCheckup.ps1
+# Invoke-DHCPCheckup
 
-Invoke-DHCPCheckup is a tool meant to identify risky DHCP and DNS configurations in Active Directory environments.
-For additional information please refer to our blogpost:
-https://akamai.com/blog/security-research/spoofing-dns-by-abusing-dhcp
+Ein PowerShell-Sicherheitsaudit-Tool zur Überprüfung von Microsoft DHCP-Servern in Active Directory-Umgebungen.
 
+## Version
 
+**Aktuelle Version:** 1.0.0
 
-The tool identifies the following misconfigurations:
+## Beschreibung
 
-### DNS Credential
-- DNS Credential is not configured
-- The configured DNS credential is of a strong user
+Invoke-DHCPCheckup führt eine umfassende Sicherheitsüberprüfung aller DHCP-Server in einer Active Directory-Domäne durch und identifiziert häufige Fehlkonfigurationen, die zu DNS-Spoofing-Schwachstellen führen können.
 
-### Name Protection
-- Name protection is not enabled on a scope
-- Name protection is not enabled by default on new scopes
+Das Tool erkennt folgende Sicherheitsrisiken:
+- Unsichere DHCP DNS-Anmeldeinformationen
+- Fehlende oder deaktivierte DHCP-Namensschutz-Einstellungen
+- Problematische DNSUpdateProxy-Gruppenmitgliedschaften
+- DNS-Einträge mit schwachen Berechtigungen
 
-### DNSUpdateProxy
-- Display group members 
-- Specify whether the members are DHCP servers
+## Autor
 
-### Weak record ACLs
-- List records owned by DHCP servers (Managed Records)
-- List records that could be overwritten by authenticated users
+- **Ori David** (@oridavid123)
+- **Organisation:** Akamai SIG
+- **Blog-Artikel:** https://akamai.com/blog/security-research/spoofing-dns-by-abusing-dhcp
 
+## Voraussetzungen
 
-## Usage
-Invoke-DHCPCheckup relies on the DHCP server management API and requires to run as a user that is part of the "DHCP Administrators" and "DNSAdmins" groups.
+### System-Anforderungen
+- Windows-System mit PowerShell 5.1 oder höher
+- Mitglied einer Active Directory-Domäne
 
-It also requires the following Powershell modules: 
-- ActiveDirectory
-- DHCPServer
-- DNSServer
+### Erforderliche PowerShell-Module
+Das Skript benötigt folgende Module (werden automatisch importiert):
+- `DHCPServer`
+- `ActiveDirectory`
+- `DnsServer`
 
-To run use the following commands:
+### Berechtigungen
+Der ausführende Benutzer benötigt:
+- Leserechte auf DHCP-Servern (`Get-DhcpServerInDC`, `Get-DhcpServerSetting`, etc.)
+- Leserechte in Active Directory (`Get-ADGroupMember`)
+- Leserechte auf DNS-Server-Ressourcen (`Get-DnsServerResourceRecord`)
+
+## Installation
+
+1. Lade das Skript herunter:
+```powershell
+# Navigiere zum gewünschten Verzeichnis
+cd C:\Scripts\DHCPCheckup
 ```
-PS C:\Users\Administrator> Import-Module C:\Users\Administrator\Desktop\Invoke-DHCPCheckup.ps1
-PS C:\Users\Administrator> Invoke-DHCPCheckup -domainName <domain_name> -dnsServerName <adidns_server_fqdn>
+
+2. Überprüfe die Execution Policy:
+```powershell
+Get-ExecutionPolicy
+# Falls erforderlich, anpassen:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
--------
+## Verwendung
+
+### Grundlegende Verwendung
+
+```powershell
+# Skript importieren
+. .\Invoke-DHCPCheckup.ps1
+
+# Audit durchführen
+Invoke-DHCPCheckup -domainName "beispiel.local" -dnsServerName "dc01.beispiel.local"
+```
+
+### Parameter
+
+| Parameter | Typ | Erforderlich | Beschreibung |
+|-----------|-----|--------------|--------------|
+| `-domainName` | String | Ja | Name der Active Directory-Domäne, die gescannt werden soll |
+| `-dnsServerName` | String | Ja | Name des DNS-Servers, der die AD-integrierte DNS-Zone hostet |
+
+### Beispiel
+
+```powershell
+Invoke-DHCPCheckup -domainName "contoso.local" -dnsServerName "dc2022.contoso.local"
+```
+
+## Was wird überprüft?
+
+### 1. Aktive DHCP-Server
+- Ermittelt alle in der Domäne registrierten DHCP-Server
+- Testet die Erreichbarkeit jedes Servers
+- Listet alle aktiven Server auf
+
+### 2. DNS-Anmeldeinformationen
+- Prüft, welche Credentials die DHCP-Server zum Erstellen von DNS-Einträgen verwenden
+- Warnt, wenn privilegierte Konten (Domain Admins, Enterprise Admins, etc.) verwendet werden
+- Identifiziert Computerkonten, die als Fallback verwendet werden
+
+### 3. DHCP-Namensschutz
+- Überprüft Namensschutz-Einstellungen auf Server-Ebene (IPv4 und IPv6)
+- Überprüft Namensschutz-Einstellungen für jeden einzelnen Scope
+- Meldet deaktivierte Namensschutz-Konfigurationen
+
+### 4. DNSUpdateProxy-Gruppe
+- Listet alle Mitglieder der DNSUpdateProxy-Gruppe auf
+- Identifiziert DHCP-Server in dieser Gruppe (Sicherheitsrisiko)
+- Meldet Nicht-DHCP-Mitglieder, die entfernt werden sollten
+
+### 5. Anfällige DNS-Einträge
+- Scannt alle DNS-Einträge in der Zone
+- Findet Einträge, die von DHCP-Servern erstellt wurden (anfällig für Client-Spoofing)
+- Identifiziert Einträge mit Schreibrechten für "Authenticated Users"
+
+## Ausgabe
+
+Das Tool gibt detaillierte Informationen aus:
+- ✅ **Gefundene aktive DHCP-Server**
+- ⚠️  **Sicherheitswarnungen** bei problematischen Konfigurationen
+- 🔍 **Liste anfälliger DNS-Einträge**
+
+## Sicherheitshinweise
+
+- Dieses Tool ist ausschließlich für **autorisierte Sicherheitstests** gedacht
+- Das Skript führt **keine Änderungen** am System durch (read-only)
+- Verwende es nur in Umgebungen, für die du die entsprechende Berechtigung hast
+- Die Ergebnisse sollten zur Behebung von Sicherheitslücken verwendet werden
+
+## Fehlerbehebung
+
+### Fehler: "No DHCP servers found in the domain"
+- Überprüfe, ob DHCP-Server in der Domäne autorisiert sind
+- Stelle sicher, dass du über ausreichende Berechtigungen verfügst
+
+### Fehler: "DHCP server X is not responding"
+- Überprüfe die Netzwerkverbindung zum Server
+- Stelle sicher, dass der DHCP-Dienst auf dem Server läuft
+- Überprüfe Firewall-Regeln
+
+### Module können nicht geladen werden
+```powershell
+# RSAT-Tools installieren (Windows 10/11)
+Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0
+Add-WindowsCapability -Online -Name Rsat.Dhcp.Tools~~~~0.0.1.0
+Add-WindowsCapability -Online -Name Rsat.Dns.Tools~~~~0.0.1.0
+```
+
+## Lizenz
+
+Dieses Projekt ist ein Fork von [akamai/Invoke-DHCPCheckup](https://github.com/akamai/Invoke-DHCPCheckup) (über [ForumSchlampe/Invoke-DHCPCheckup](https://github.com/ForumSchlampe/Invoke-DHCPCheckup)) und steht unter der Apache License 2.0.
+
+```
 Copyright 2023 Akamai Technologies Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +158,13 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+```
 
+## Support
 
+Bei Fragen oder Problemen:
+- Öffne ein Issue in [feiglein74/Invoke-DHCPCheckup](https://github.com/feiglein74/Invoke-DHCPCheckup/issues)
 
+## Changelog
+
+Siehe [CHANGELOG.md](CHANGELOG.md) für eine vollständige Versionshistorie.
