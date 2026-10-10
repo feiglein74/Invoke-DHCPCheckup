@@ -6,8 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Dies ist ein PowerShell-Sicherheitsaudit-Tool namens **Invoke-DHCPCheckup**, das Sicherheitsüberprüfungen auf Microsoft DHCP-Servern in Active Directory-Umgebungen durchführt. Es identifiziert häufige Fehlkonfigurationen, die zu DNS-Spoofing-Schwachstellen führen können.
 
-**Autor:** Ori David (@oridavid123) von Akamai SIG
+**Original-Autor:** Ori David (@oridavid123) von Akamai SIG
 **Referenz:** https://akamai.com/blog/security-research/spoofing-dns-by-abusing-dhcp
+
+## Herkunft & Remotes
+
+Dieses Repo ist ein Fork. Das Akamai-Original wird seit Dezember 2023 nicht mehr gepflegt (offene PRs ohne Reaktion), deshalb entwickeln wir hier unabhängig weiter.
+
+| Remote | Repository | Rolle |
+|---|---|---|
+| `origin` | `feiglein74/Invoke-DHCPCheckup` | Unser Fork, hierhin wird gepusht |
+| `upstream` | `akamai/Invoke-DHCPCheckup` | Original, inaktiv |
+| `forumschlampe` | `ForumSchlampe/Invoke-DHCPCheckup` | Basis unseres `main` (SID-basierte Gruppenerkennung, Dynamic-Update-Check, SID-Fix von michaelbast) |
+
+- `main` baut auf `forumschlampe/main` (Stand 2025-01-29) auf.
+- PRs an Akamai lohnen sich voraussichtlich nicht. Falls doch: Branch von `upstream/main` abzweigen, nur Code-Änderungen, englisch, ohne deutsche Doku und CLAUDE.md.
+- Der alte lokale Stand vor dem Umbau liegt im lokalen Branch `backup/initial-setup`.
 
 ## Skript ausführen
 
@@ -33,7 +47,7 @@ Invoke-DHCPCheckup -domainName "beispiel.local" -dnsServerName "dc.beispiel.loca
 
 ## Architektur
 
-Das Skript ist als einzelne PowerShell-Datei mit sechs Hauptfunktionen strukturiert:
+Das Skript ist als einzelne PowerShell-Datei mit sieben Prüf-/Hilfsfunktionen und einer Hauptfunktion strukturiert:
 
 ### Sicherheitsüberprüfungs-Funktionen
 
@@ -42,38 +56,45 @@ Das Skript ist als einzelne PowerShell-Datei mit sechs Hauptfunktionen strukturi
    - Testet jeden Server auf Erreichbarkeit
    - Gibt Liste der aktiven Server-DNS-Namen zurück
 
-2. **GetStrongUsers** (Zeilen 43-57)
-   - Identifiziert Mitglieder privilegierter AD-Gruppen: Domain Controllers, Domain Admins, Enterprise Admins, DnsAdmins, Administrators
-   - Wird verwendet, um zu erkennen, ob DHCP-Credentials erhöhte Berechtigungen haben
+2. **GetStrongUsers** (Zeilen 43-64)
+   - Identifiziert Mitglieder privilegierter AD-Gruppen (rekursiv) über **SIDs**, damit sprachunabhängig:
+     Domain Controllers (`<DomainSID>-516`), Domain Admins (`-512`), Enterprise Admins (`-519`), Administrators (`S-1-5-32-544`)
+   - DnsAdmins wird per Name gesucht (keine feste SID, Name wird nicht lokalisiert)
+   - Gibt das `name`-Attribut (CN) der Mitglieder zurück
 
-3. **Check-DnsCredentialSettings** (Zeilen 59-109)
+3. **Check-DnsCredentialSettings** (Zeilen 66-116)
    - Untersucht die DNS-Credential-Konfiguration auf jedem DHCP-Server
    - Prüft, ob Credentials aus privilegierten Gruppen stammen (Sicherheitsrisiko)
-   - Gibt Array von Credentials und deren zugehörigen Servern zurück
+   - Gibt Array von `(Credential, Servername)`-Paaren zurück
 
-4. **Check-DhcpNameProtectionSettings** (Zeilen 111-172)
+4. **Check-DhcpNameProtectionSettings** (Zeilen 118-179)
    - Prüft DHCP-Namensschutz-Einstellungen auf Server- und Scope-Ebene
    - Überprüft sowohl IPv4- als auch IPv6-Scopes
    - Namensschutz verhindert DNS-Eintrag-Spoofing
 
-5. **Check-DnsUpdateProxyMembership** (Zeilen 174-194)
-   - Überprüft DNSUpdateProxy-Gruppenmitgliedschaft
+5. **Check-DhcpDynamicNameUpdateSettings** (Zeilen 181-242) — aus dem Fork von diecknet/ForumSchlampe
+   - Prüft die DNS-Dynamic-Update-Einstellung auf Server- und Scope-Ebene (IPv4 und IPv6)
+   - Meldet jeden Wert außer `Never`; da `OnClientRequest` der Windows-Standard ist, schlägt der Check praktisch immer an (eher Hinweis als Befund)
+
+6. **Check-DnsUpdateProxyMembership** (Zeilen 244-264)
+   - Überprüft DNSUpdateProxy-Gruppenmitgliedschaft (rekursiv)
    - Identifiziert DHCP-Server in dieser Gruppe (anfällige Konfiguration)
    - Kennzeichnet Nicht-DHCP-Mitglieder, die entfernt werden sollten
 
-6. **Find-VulnerableDnsRecords** (Zeilen 196-265)
+7. **Find-VulnerableDnsRecords** (Zeilen 266-338)
    - Scannt DNS-Zonen-Einträge auf schwache ACLs
    - Identifiziert Einträge, die von DHCP-Servern erstellt wurden (anfällig für Client-Spoofing)
-   - Findet Einträge, die von "Authenticated Users" beschreibbar sind
+   - Findet Einträge, die von "Authenticated Users" beschreibbar sind (Auflösung über SID `S-1-5-11`, damit sprachunabhängig)
 
 ### Hauptfunktion
 
-**Invoke-DHCPCheckup** (Zeilen 267-371) orchestriert die Sicherheitsüberprüfung durch:
+**Invoke-DHCPCheckup** (Zeilen 340-449) orchestriert die Sicherheitsüberprüfung durch:
 1. Finden aktiver DHCP-Server
 2. Prüfen der DNS-Credential-Konfigurationen
-3. Audit der Namensschutz-Einstellungen
-4. Überprüfung der DNSUpdateProxy-Mitgliedschaft
-5. Scannen nach anfälligen DNS-Einträgen
+3. Prüfen der Dynamic-Update-Einstellungen
+4. Audit der Namensschutz-Einstellungen
+5. Überprüfung der DNSUpdateProxy-Mitgliedschaft
+6. Scannen nach anfälligen DNS-Einträgen
 
 ## Sicherheitskontext
 
@@ -86,10 +107,10 @@ Das Skript ist read-only und führt keine Änderungen an der Umgebung durch.
 
 ## Code-Qualität & Bekannte Probleme
 
-### Kritische Code-Issues (Stand: 2025-11-15)
+### Kritische Code-Issues (Stand: 2026-10-10)
 
 **1. Globale Variablen / Scope-Bleeding**
-- **Betroffene Funktionen:** `Check-DnsUpdateProxyMembership`, `Find-VulnerableDnsRecords`
+- **Betroffene Funktionen:** `Check-DnsUpdateProxyMembership` (Zeile 255), `Find-VulnerableDnsRecords` (Zeile 282)
 - **Problem:** Nutzen `$domainName` und `$dnsServerName` ohne Parameter-Übergabe
 - **Auswirkung:** Funktionen sind nicht standalone-fähig, nur aus Hauptfunktion aufrufbar
 - **Lösung:** Parameter explizit übergeben
@@ -97,14 +118,14 @@ Das Skript ist read-only und führt keine Änderungen an der Umgebung durch.
 ```powershell
 # Aktuell (fehlerhaft):
 function Check-DnsUpdateProxyMembership {
-    $updateProxymembers = Get-ADGroupMember "DNSUpdateProxy"
+    $updateProxymembers = Get-ADGroupMember "DNSUpdateProxy" -Recursive
     # $domainName wird aus Parent-Scope verwendet
 }
 
 # Korrekt:
 function Check-DnsUpdateProxyMembership {
     param([string]$domainName)
-    $updateProxymembers = Get-ADGroupMember "DNSUpdateProxy"
+    $updateProxymembers = Get-ADGroupMember "DNSUpdateProxy" -Recursive
 }
 ```
 
@@ -130,74 +151,47 @@ try {
 if ($success) { ... }
 ```
 
-**3. Array-Splitting ohne Validierung**
-- **Betroffene Funktion:** `Find-VulnerableDnsRecords` (Zeilen 232-233)
-- **Problem:** String-Split kann bei unerwarteten Formaten fehlschlagen
-- **Auswirkung:** Runtime-Fehler bei Index-Out-Of-Bounds
+**3. Credential-Paare werden zu Strings verklebt**
+- **Betroffene Funktion:** `Find-VulnerableDnsRecords` (Parameter Zeile 269, Split Zeilen 305-306)
+- **Problem:** `Check-DnsCredentialSettings` liefert Paare `(Credential, Server)`, der Parameter `[String[]]$DhcpCredentials` wandelt sie aber in `"Credential SERVER"`-Strings um, die dann per `.split(' ')` wieder zerlegt werden
+- **Auswirkung:** Bricht bei Credentials mit Leerzeichen; Index-Zugriff ohne Prüfung
+- **Lösung:** Parameter als `[object[]]` deklarieren und die Paare direkt verwenden (oder PSCustomObjects mit `Credential`/`Server`)
 
-```powershell
-# Aktuell (fehlerhaft):
-$DhcpServerCredential = $cred.split(' ')[0]
-$DhcpServerName = $cred.split(' ')[1]
-
-# Korrekt:
-if ($cred -is [array] -and $cred.Count -ge 2) {
-    $DhcpServerCredential = $cred[0]
-    $DhcpServerName = $cred[1]
-} else {
-    Write-Warning "Ungültiges Credential-Format: $cred"
-    continue
-}
-```
+**4. Credential-Abgleich mit unterschiedlichen Namensformaten**
+- **Betroffene Funktion:** `Check-DnsCredentialSettings` (Zeile 90)
+- **Problem:** `Get-DhcpServerDnsCredential` liefert den Anmeldenamen (`sAMAccountName`), `GetStrongUsers` liefert aber das `name`-Attribut (CN). Bei Benutzerkonten weichen beide oft ab (z. B. CN „Max Mustermann“, sAMAccountName „mmustermann“)
+- **Auswirkung:** Ein privilegiertes DNS-Credential wird nicht als solches gemeldet (vgl. Akamai-Issue #11). Computerkonten (Zeile 104) sind meist nicht betroffen, da CN und Name ohne `$` übereinstimmen
+- **Lösung:** `GetStrongUsers` sollte `SamAccountName` (oder SIDs) zurückgeben und beide Vergleiche darauf umstellen; vor dem Fix in einer Testumgebung verifizieren
 
 ### Performance-Optimierungen
 
-**4. GetStrongUsers - Ineffiziente AD-Abfragen**
-- **Problem:** `Get-ADGroupMember` in Schleife, rekursive Gruppen werden mehrfach abgefragt
-- **Auswirkung:** Bei großen AD-Umgebungen (>10.000 User) sehr langsam (30+ Sekunden)
+**5. GetStrongUsers - AD-Abfragen**
+- `-Recursive` ist inzwischen umgesetzt; die Abfrage läuft aber noch per `+=` in einer Schleife
+- Geringe Priorität, nur bei sehr großen Gruppen relevant
 
-```powershell
-# Aktuell (langsam):
-foreach ($group in $strongGroups) {
-    $strongGroupsMembers += Get-ADGroupMember $group | select name
-}
-
-# Optimiert:
-$strongGroupsMembers = $strongGroups | ForEach-Object {
-    Get-ADGroupMember $_ -Recursive -ErrorAction SilentlyContinue
-} | Select-Object -Unique -ExpandProperty Name
-```
-
-**5. Find-VulnerableDnsRecords - Nested Loop O(n*m)**
+**6. Find-VulnerableDnsRecords - Nested Loop O(n*m)**
 - **Problem:** Für jeden DNS-Eintrag wird die komplette DHCP-Credentials-Liste durchlaufen
-- **Auswirkung:** Bei 1000 DNS-Einträgen und 10 DHCP-Servern = 10.000 Iterationen
+- **Auswirkung:** Bei 1000 DNS-Einträgen und 10 DHCP-Servern = 10.000 Iterationen; der eigentliche Engpass ist aber `get-acl` pro Record
 
 ```powershell
-# Aktuell (langsam):
-foreach ($record in $DnsRecords) {
-    foreach ($cred in $DhcpCredentials) {
-        if ($recordAcl.Owner -eq $cred) { ... }
-    }
-}
-
 # Optimiert:
 $credHash = @{}
 foreach ($cred in $DhcpCredentials) {
     $credHash[$cred[0]] = $cred[1]
 }
 foreach ($record in $DnsRecords) {
-    if ($credHash.ContainsKey($recordAcl.Owner)) { ... }
+    if ($credHash.ContainsKey($ownerName)) { ... }
 }
 ```
 
 ### Best Practices
 
-**6. Funktionsnamen-Konventionen**
+**7. Funktionsnamen-Konventionen**
 - PowerShell verwendet Verb-Noun-Pattern mit approved Verbs
-- Aktuelle Namen: `GetActiveActiveDhcpServers`, `GetStrongUsers` (nicht standard-konform)
-- Empfohlen: `Get-ActiveDhcpServer`, `Get-PrivilegedGroupMember`
+- Aktuelle Namen: `GetActiveActiveDhcpServers`, `GetStrongUsers`, `Check-*` (nicht standard-konform)
+- Empfohlen: `Get-ActiveDhcpServer`, `Get-PrivilegedGroupMember`, `Test-*`
 
-**7. Pipeline-fähige Ausgabe**
+**8. Pipeline-fähige Ausgabe**
 - Aktuell nur `Write-Host` (nicht weiterverarbeitbar)
 - Besser: PSCustomObject zurückgeben für Export/Filterung
 
@@ -211,15 +205,20 @@ return [PSCustomObject]@{
 }
 ```
 
+**9. Kleinkram**
+- Typografische Anführungszeichen in Zeile 279 (`“S-1-5-11“`) durch `"` ersetzen
+- Ungenutzte Initialisierungen `= @()` in Zeilen 274-275 entfernen
+- IPv4/IPv6-Logik ist in `Check-DhcpNameProtectionSettings` und `Check-DhcpDynamicNameUpdateSettings` jeweils dupliziert
+
 ### Code-Verbesserungs-Roadmap
 
 **Priorität 1 (Kritisch):**
 1. Parameter-Übergabe statt globale Variablen
 2. Fehlerbehandlung mit sauberem Try-Catch
-3. Array-Zugriff absichern
+3. Credential-Paare ohne String-Split übergeben
+4. Credential-Abgleich normalisieren
 
 **Priorität 2 (Performance):**
-4. AD-Gruppen-Abfragen optimieren
 5. DNS-Scanning mit HashTable
 
 **Priorität 3 (Wartbarkeit):**
@@ -231,7 +230,7 @@ Detaillierte Umsetzung siehe TODO.md unter "Code-Review-Ergebnisse".
 
 ## Git-Konventionen
 
-**WICHTIG:** Alle Git-Commits und Kommentare müssen auf Deutsch verfasst werden und sollten die informelle "du"-Form verwenden (kein "Sie").
+**WICHTIG:** Alle Git-Commits und Kommentare müssen auf Deutsch verfasst werden und sollten die informelle "du"-Form verwenden (kein "Sie"). Ausnahme: PRs an fremde Repos (Akamai, ForumSchlampe) auf Englisch.
 
 ### Commit-Message-Format
 

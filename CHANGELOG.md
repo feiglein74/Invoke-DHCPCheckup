@@ -7,6 +7,19 @@ und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+Basis ist jetzt [ForumSchlampe/Invoke-DHCPCheckup](https://github.com/ForumSchlampe/Invoke-DHCPCheckup) (Stand 2025-01-29) statt des inaktiven Akamai-Originals.
+
+### Hinzugefügt
+- Funktion `Check-DhcpDynamicNameUpdateSettings`: prüft DNS-Dynamic-Update-Einstellungen auf Server- und Scope-Ebene (IPv4/IPv6) (diecknet, Akamai-PR #16)
+
+### Geändert
+- `GetStrongUsers` erkennt privilegierte Gruppen über SIDs statt englischer Namen, funktioniert damit auch in deutschsprachigen AD-Umgebungen (ForumSchlampe, Akamai-PR #13)
+- "Authenticated Users" wird über die SID `S-1-5-11` aufgelöst statt über den englischen Namen
+- `Get-ADGroupMember` wird rekursiv abgefragt, verschachtelte Mitgliedschaften werden erkannt
+
+### Behoben
+- Falsche SID für Domain Admins (`-516` statt `-512`) (michaelbast)
+
 ### Geplant
 - Export-Funktion für Audit-Ergebnisse
 - Verbose und Quiet Modi
@@ -63,5 +76,5 @@ Dieses Projekt verwendet Semantic Versioning (MAJOR.MINOR.PATCH):
 
 ---
 
-[Unreleased]: https://github.com/user/repo/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/user/repo/releases/tag/v1.0.0
+[Unreleased]: https://github.com/feiglein74/Invoke-DHCPCheckup/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/feiglein74/Invoke-DHCPCheckup/releases/tag/v1.0.0

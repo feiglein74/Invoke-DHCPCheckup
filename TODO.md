@@ -4,38 +4,39 @@
 
 _Keine offenen Tasks_
 
-## Code-Review-Ergebnisse (2025-11-15)
+## Code-Review-Ergebnisse (2025-11-15, aktualisiert 2026-10-10 nach Umbau auf ForumSchlampes Fork)
 
 ### 🔴 Priorität 1 - Kritische Probleme (sofort beheben)
 
 - [ ] **Globale Variablen beheben**
-  - `Check-DnsUpdateProxyMembership` (Zeile 185): `$domainName` als Parameter übergeben statt globale Variable
-  - `Find-VulnerableDnsRecords` (Zeile 208): `$domainName` und `$dnsServerName` als Parameter übergeben
+  - `Check-DnsUpdateProxyMembership` (Zeile 255): `$domainName` als Parameter übergeben statt globale Variable
+  - `Find-VulnerableDnsRecords` (Zeile 282): `$domainName` und `$dnsServerName` als Parameter übergeben
   - Problem: Funktionen funktionieren nur durch Scope-Bleeding aus Hauptfunktion
 
 - [ ] **Fehlerbehandlung verbessern**
   - `GetActiveActiveDhcpServers` (Zeilen 20, 30): `$error.Clear()` und `$error[0]`-Prüfung durch saubere Try-Catch-Blöcke ersetzen
-  - Leerer Catch-Block (Zeile 26) mit sinnvollem Logging füllen
+  - Leerer Catch-Block (Zeile 25-28) mit sinnvollem Logging füllen
   - Problem: Unzuverlässige Fehlerprüfung, Manipulation globales $error-Array
 
-- [ ] **String-Splitting absichern**
-  - `Find-VulnerableDnsRecords` (Zeilen 232-233): Array-Zugriff statt String-Split verwenden
-  - Problem: `$cred.split(' ')[0]` kann bei unerwarteten Formaten fehlschlagen
-  - Lösung: Arrays direkt verwenden mit Index-Prüfung
+- [ ] **Credential-Paare ohne String-Split übergeben**
+  - `Find-VulnerableDnsRecords` (Zeile 269): Parameter `[String[]]$DhcpCredentials` verklebt die Paare zu `"Credential SERVER"`
+  - Zeilen 305-306: `$cred.split(' ')` zerlegt sie wieder, bricht bei Leerzeichen
+  - Lösung: `[object[]]` bzw. PSCustomObjects verwenden
+
+- [ ] **Credential-Abgleich normalisieren** (neu)
+  - `Check-DnsCredentialSettings` (Zeile 90): vergleicht `sAMAccountName` mit dem CN aus `GetStrongUsers`
+  - Problem: Privilegierte Benutzer-Credentials werden nicht erkannt, wenn CN ≠ sAMAccountName (vgl. Akamai-Issue #11)
+  - Lösung: `GetStrongUsers` gibt `SamAccountName` zurück; in Testumgebung verifizieren
 
 ### 🟡 Priorität 2 - Performance-Optimierungen
 
-- [ ] **GetStrongUsers optimieren** (Zeilen 43-57)
-  - `Get-ADGroupMember` mit `-Recursive` Parameter nutzen
-  - Gruppen nicht in Schleife abfragen, sondern mit Pipeline
-  - Problem: Rekursive Gruppen werden mehrfach abgefragt
-  - Erwartete Verbesserung: 50-80% schneller bei großen AD-Umgebungen
+- [x] **GetStrongUsers: `-Recursive`** (durch ForumSchlampes Fork erledigt)
+- [ ] **GetStrongUsers: `+=` in Schleife durch Pipeline ersetzen** (Zeilen 55-58, geringe Priorität)
 
-- [ ] **DNS-Record-Scanning optimieren** (Zeilen 210-248)
+- [ ] **DNS-Record-Scanning optimieren** (Zeilen 284-322)
   - DHCP-Credentials in HashTable cachen für O(1) Lookup
   - Nested Loop O(n*m) vermeiden
-  - Problem: Bei vielen DNS-Einträgen (>1000) sehr langsam
-  - Erwartete Verbesserung: 90% schneller bei großen DNS-Zonen
+  - Hinweis: Hauptkosten verursacht `get-acl` pro Record
 
 ### 🟢 Priorität 3 - Best Practices & Wartbarkeit
 
@@ -45,8 +46,11 @@ _Keine offenen Tasks_
   - Einheitliche Namenskonvention für alle Funktionen
 
 - [ ] **Code-Duplikation reduzieren**
-  - IPv4/IPv6-Prüfungen (Zeilen 122-165) in separate Hilfsfunktion auslagern
-  - `Test-DhcpNameProtectionScope` für beide IP-Versionen nutzen
+  - IPv4/IPv6-Prüfungen in `Check-DhcpNameProtectionSettings` (Zeilen 118-179) und `Check-DhcpDynamicNameUpdateSettings` (Zeilen 181-242) in Hilfsfunktionen auslagern
+
+- [ ] **Kleinkram**
+  - Typografische Anführungszeichen in Zeile 279 (`“S-1-5-11“`) ersetzen
+  - Ungenutzte Initialisierungen in Zeilen 274-275 entfernen
 
 - [ ] **Strukturierte Ausgabe implementieren**
   - PSCustomObject statt nur Write-Host zurückgeben
@@ -62,7 +66,7 @@ _Keine offenen Tasks_
 
 - [ ] **Inline-Kommentare ergänzen**
   - Komplexe Logik in `Find-VulnerableDnsRecords` dokumentieren
-  - ACL-Prüfungen erklären (Zeilen 214-246)
+  - ACL-Prüfungen erklären (Zeilen 288-321)
   - Sicherheitsrisiken in Kommentaren beschreiben
 
 - [ ] **Comment-Based Help verbessern**
@@ -119,7 +123,7 @@ _Keine offenen Tasks_
 
 ## Bekannte Probleme
 
-_Keine bekannten Probleme_
+- Dynamic-Update-Check meldet jeden Wert außer `Never`, also praktisch jeden Server mit Windows-Standard (`OnClientRequest`). Bewertung/Severity überdenken (vgl. Akamai-Issue #15)
 
 ## Ideen für die Zukunft
 
@@ -136,9 +140,10 @@ _Keine bekannten Probleme_
 - [x] CHANGELOG.md erstellen
 - [x] Git Repository einrichten
 - [x] CLAUDE.md für AI-Assistenz erstellen
+- [x] Fork auf GitHub angelegt, `main` auf ForumSchlampes Fork umgebaut (SID-basierte Gruppenerkennung, sprachunabhängig, Dynamic-Update-Check)
 
 ---
 
 **Hinweis:** Diese TODO-Liste wird kontinuierlich gepflegt. Vorschläge und Beiträge sind willkommen!
 
-**Letzte Aktualisierung:** 2025-11-15
+**Letzte Aktualisierung:** 2026-10-10
