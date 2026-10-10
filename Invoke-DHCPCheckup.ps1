@@ -46,12 +46,13 @@ function GetStrongUsers
 
     foreach ($group in $strongGroups)
     {
-        $strongGroupsMembers += Get-ADGroupMember $group -Recursive | select name
+        $strongGroupsMembers += Get-ADGroupMember $group -Recursive | select SamAccountName
     }
 
-    $strongGroupsMembers = $strongGroupsMembers | select name -unique 
+    # SamAccountName instead of name (CN): DHCP credentials and record owners use the logon name
+    $strongGroupsMembers = $strongGroupsMembers | select SamAccountName -unique
 
-    return $strongGroupsMembers.name
+    return $strongGroupsMembers.SamAccountName
 
 }
 
@@ -76,10 +77,12 @@ function Check-DnsCredentialSettings
         if ($serverDnsCredential.UserName -ne "")
         {
             Write-Host "[*] $($serverDisplayName) - The credential used to create and own DNS records by the server is: '$($serverDnsCredential.UserName)'"
-            $DhcpCredentials += [PSCustomObject]@{ Credential = $serverDnsCredential.UserName; Server = $serverDisplayName }
+            # Normalize "DOMAIN\user" and "user@domain" to the plain logon name
+            $credentialSamAccountName = $serverDnsCredential.UserName.Split('\')[-1].Split('@')[0]
+            $DhcpCredentials += [PSCustomObject]@{ Credential = $credentialSamAccountName; Server = $serverDisplayName }
 
             # Check if the DNS credential is strong
-            if ($serverDnsCredential.UserName -in $strongGroupsMembers)
+            if ($credentialSamAccountName -in $strongGroupsMembers)
             {
                 Write-Host "[*] $($serverDisplayName) - The credential '$($serverDnsCredential.UserName)' is a Member of a strong group. This means that a malicious DHCP client could spoof any DNS record in the zone."
             
@@ -93,7 +96,7 @@ function Check-DnsCredentialSettings
             $DhcpCredentials += [PSCustomObject]@{ Credential = ($serverCN + "$"); Server = $serverDisplayName }
         
             # Check if the DNS credential is strong
-            if ($serverCN -in $strongGroupsMembers)
+            if (($serverCN + "$") -in $strongGroupsMembers)
             {
                 Write-Host "[*] $($serverDisplayName) - The credential '$($serverCN)$' is a Member of a strong group. This means that a malicious DHCP client could spoof any DNS record in the zone."
 
