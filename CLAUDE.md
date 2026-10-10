@@ -51,44 +51,44 @@ Das Skript ist als einzelne PowerShell-Datei mit sieben Prüf-/Hilfsfunktionen u
 
 ### Sicherheitsüberprüfungs-Funktionen
 
-1. **GetActiveActiveDhcpServers** (Zeilen 5-41)
+1. **GetActiveActiveDhcpServers** (Zeilen 5-33)
    - Ermittelt alle DHCP-Server in der Domäne mittels `Get-DhcpServerInDC`
    - Testet jeden Server auf Erreichbarkeit
    - Gibt Liste der aktiven Server-DNS-Namen zurück
 
-2. **GetStrongUsers** (Zeilen 43-64)
+2. **GetStrongUsers** (Zeilen 35-56)
    - Identifiziert Mitglieder privilegierter AD-Gruppen (rekursiv) über **SIDs**, damit sprachunabhängig:
      Domain Controllers (`<DomainSID>-516`), Domain Admins (`-512`), Enterprise Admins (`-519`), Administrators (`S-1-5-32-544`)
    - DnsAdmins wird per Name gesucht (keine feste SID, Name wird nicht lokalisiert)
    - Gibt das `name`-Attribut (CN) der Mitglieder zurück
 
-3. **Check-DnsCredentialSettings** (Zeilen 66-116)
+3. **Check-DnsCredentialSettings** (Zeilen 58-108)
    - Untersucht die DNS-Credential-Konfiguration auf jedem DHCP-Server
    - Prüft, ob Credentials aus privilegierten Gruppen stammen (Sicherheitsrisiko)
-   - Gibt Array von `(Credential, Servername)`-Paaren zurück
+   - Gibt PSCustomObjects mit `Credential` und `Server` zurück
 
-4. **Check-DhcpNameProtectionSettings** (Zeilen 118-179)
+4. **Check-DhcpNameProtectionSettings** (Zeilen 110-171)
    - Prüft DHCP-Namensschutz-Einstellungen auf Server- und Scope-Ebene
    - Überprüft sowohl IPv4- als auch IPv6-Scopes
    - Namensschutz verhindert DNS-Eintrag-Spoofing
 
-5. **Check-DhcpDynamicNameUpdateSettings** (Zeilen 181-242) — aus dem Fork von diecknet/ForumSchlampe
+5. **Check-DhcpDynamicNameUpdateSettings** (Zeilen 173-234) — aus dem Fork von diecknet/ForumSchlampe
    - Prüft die DNS-Dynamic-Update-Einstellung auf Server- und Scope-Ebene (IPv4 und IPv6)
    - Meldet jeden Wert außer `Never`; da `OnClientRequest` der Windows-Standard ist, schlägt der Check praktisch immer an (eher Hinweis als Befund)
 
-6. **Check-DnsUpdateProxyMembership** (Zeilen 244-264)
+6. **Check-DnsUpdateProxyMembership** (Zeilen 236-260)
    - Überprüft DNSUpdateProxy-Gruppenmitgliedschaft (rekursiv)
    - Identifiziert DHCP-Server in dieser Gruppe (anfällige Konfiguration)
    - Kennzeichnet Nicht-DHCP-Mitglieder, die entfernt werden sollten
 
-7. **Find-VulnerableDnsRecords** (Zeilen 266-338)
+7. **Find-VulnerableDnsRecords** (Zeilen 262-334)
    - Scannt DNS-Zonen-Einträge auf schwache ACLs
    - Identifiziert Einträge, die von DHCP-Servern erstellt wurden (anfällig für Client-Spoofing)
    - Findet Einträge, die von "Authenticated Users" beschreibbar sind (Auflösung über SID `S-1-5-11`, damit sprachunabhängig)
 
 ### Hauptfunktion
 
-**Invoke-DHCPCheckup** (Zeilen 340-449) orchestriert die Sicherheitsüberprüfung durch:
+**Invoke-DHCPCheckup** (Zeilen 336-445) orchestriert die Sicherheitsüberprüfung durch:
 1. Finden aktiver DHCP-Server
 2. Prüfen der DNS-Credential-Konfigurationen
 3. Prüfen der Dynamic-Update-Einstellungen
@@ -109,58 +109,12 @@ Das Skript ist read-only und führt keine Änderungen an der Umgebung durch.
 
 ### Kritische Code-Issues (Stand: 2026-10-10)
 
-**1. Globale Variablen / Scope-Bleeding**
-- **Betroffene Funktionen:** `Check-DnsUpdateProxyMembership` (Zeile 255), `Find-VulnerableDnsRecords` (Zeile 282)
-- **Problem:** Nutzen `$domainName` und `$dnsServerName` ohne Parameter-Übergabe
-- **Auswirkung:** Funktionen sind nicht standalone-fähig, nur aus Hauptfunktion aufrufbar
-- **Lösung:** Parameter explizit übergeben
+Erledigt am 2026-10-10: Parameter statt globaler Variablen, `try/catch` mit `-ErrorAction Stop` statt `$error`-Prüfung, Credential-Paare als PSCustomObjects statt String-Split, Owner-Split funktioniert jetzt auch unter PowerShell 7.
 
-```powershell
-# Aktuell (fehlerhaft):
-function Check-DnsUpdateProxyMembership {
-    $updateProxymembers = Get-ADGroupMember "DNSUpdateProxy" -Recursive
-    # $domainName wird aus Parent-Scope verwendet
-}
-
-# Korrekt:
-function Check-DnsUpdateProxyMembership {
-    param([string]$domainName)
-    $updateProxymembers = Get-ADGroupMember "DNSUpdateProxy" -Recursive
-}
-```
-
-**2. Unsichere Fehlerbehandlung**
-- **Betroffene Funktion:** `GetActiveActiveDhcpServers` (Zeilen 20-30)
-- **Problem:** Manipulation des globalen `$error`-Arrays, leerer Catch-Block
-- **Auswirkung:** Fehler können unerkannt bleiben oder falsch interpretiert werden
-
-```powershell
-# Aktuell (fehlerhaft):
-$error.Clear()
-try { $res = Get-DhcpServerSetting ... } catch { }
-if (!$error[0]) { ... }
-
-# Korrekt:
-try {
-    $res = Get-DhcpServerSetting -ComputerName $server.DnsName -ErrorAction Stop
-    $success = $true
-} catch {
-    Write-Verbose "Server $($server.DnsName) nicht erreichbar: $_"
-    $success = $false
-}
-if ($success) { ... }
-```
-
-**3. Credential-Paare werden zu Strings verklebt**
-- **Betroffene Funktion:** `Find-VulnerableDnsRecords` (Parameter Zeile 269, Split Zeilen 305-306)
-- **Problem:** `Check-DnsCredentialSettings` liefert Paare `(Credential, Server)`, der Parameter `[String[]]$DhcpCredentials` wandelt sie aber in `"Credential SERVER"`-Strings um, die dann per `.split(' ')` wieder zerlegt werden
-- **Auswirkung:** Bricht bei Credentials mit Leerzeichen; Index-Zugriff ohne Prüfung
-- **Lösung:** Parameter als `[object[]]` deklarieren und die Paare direkt verwenden (oder PSCustomObjects mit `Credential`/`Server`)
-
-**4. Credential-Abgleich mit unterschiedlichen Namensformaten**
-- **Betroffene Funktion:** `Check-DnsCredentialSettings` (Zeile 90)
+**1. Credential-Abgleich mit unterschiedlichen Namensformaten**
+- **Betroffene Funktion:** `Check-DnsCredentialSettings` (Zeile 82)
 - **Problem:** `Get-DhcpServerDnsCredential` liefert den Anmeldenamen (`sAMAccountName`), `GetStrongUsers` liefert aber das `name`-Attribut (CN). Bei Benutzerkonten weichen beide oft ab (z. B. CN „Max Mustermann“, sAMAccountName „mmustermann“)
-- **Auswirkung:** Ein privilegiertes DNS-Credential wird nicht als solches gemeldet (vgl. Akamai-Issue #11). Computerkonten (Zeile 104) sind meist nicht betroffen, da CN und Name ohne `$` übereinstimmen
+- **Auswirkung:** Ein privilegiertes DNS-Credential wird nicht als solches gemeldet (vgl. Akamai-Issue #11). Computerkonten (Zeile 96) sind meist nicht betroffen, da CN und Name ohne `$` übereinstimmen
 - **Lösung:** `GetStrongUsers` sollte `SamAccountName` (oder SIDs) zurückgeben und beide Vergleiche darauf umstellen; vor dem Fix in einer Testumgebung verifizieren
 
 ### Performance-Optimierungen
@@ -177,7 +131,7 @@ if ($success) { ... }
 # Optimiert:
 $credHash = @{}
 foreach ($cred in $DhcpCredentials) {
-    $credHash[$cred[0]] = $cred[1]
+    $credHash[$cred.Credential] = $cred.Server
 }
 foreach ($record in $DnsRecords) {
     if ($credHash.ContainsKey($ownerName)) { ... }
@@ -205,18 +159,13 @@ return [PSCustomObject]@{
 }
 ```
 
-**9. Kleinkram**
-- Typografische Anführungszeichen in Zeile 279 (`“S-1-5-11“`) durch `"` ersetzen
-- Ungenutzte Initialisierungen `= @()` in Zeilen 274-275 entfernen
+**9. Code-Duplikation**
 - IPv4/IPv6-Logik ist in `Check-DhcpNameProtectionSettings` und `Check-DhcpDynamicNameUpdateSettings` jeweils dupliziert
 
 ### Code-Verbesserungs-Roadmap
 
 **Priorität 1 (Kritisch):**
-1. Parameter-Übergabe statt globale Variablen
-2. Fehlerbehandlung mit sauberem Try-Catch
-3. Credential-Paare ohne String-Split übergeben
-4. Credential-Abgleich normalisieren
+1. Credential-Abgleich normalisieren (sAMAccountName vs. CN)
 
 **Priorität 2 (Performance):**
 5. DNS-Scanning mit HashTable

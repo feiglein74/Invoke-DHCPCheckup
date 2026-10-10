@@ -8,32 +8,22 @@ _Keine offenen Tasks_
 
 ### 🔴 Priorität 1 - Kritische Probleme (sofort beheben)
 
-- [ ] **Globale Variablen beheben**
-  - `Check-DnsUpdateProxyMembership` (Zeile 255): `$domainName` als Parameter übergeben statt globale Variable
-  - `Find-VulnerableDnsRecords` (Zeile 282): `$domainName` und `$dnsServerName` als Parameter übergeben
-  - Problem: Funktionen funktionieren nur durch Scope-Bleeding aus Hauptfunktion
-
-- [ ] **Fehlerbehandlung verbessern**
-  - `GetActiveActiveDhcpServers` (Zeilen 20, 30): `$error.Clear()` und `$error[0]`-Prüfung durch saubere Try-Catch-Blöcke ersetzen
-  - Leerer Catch-Block (Zeile 25-28) mit sinnvollem Logging füllen
-  - Problem: Unzuverlässige Fehlerprüfung, Manipulation globales $error-Array
-
-- [ ] **Credential-Paare ohne String-Split übergeben**
-  - `Find-VulnerableDnsRecords` (Zeile 269): Parameter `[String[]]$DhcpCredentials` verklebt die Paare zu `"Credential SERVER"`
-  - Zeilen 305-306: `$cred.split(' ')` zerlegt sie wieder, bricht bei Leerzeichen
-  - Lösung: `[object[]]` bzw. PSCustomObjects verwenden
+- [x] **Globale Variablen beheben** (2026-10-10)
+- [x] **Fehlerbehandlung in `GetActiveActiveDhcpServers` verbessern** (2026-10-10)
+- [x] **Credential-Paare als PSCustomObjects statt String-Split** (2026-10-10, behebt auch den Fall mit nur einem DHCP-Server)
+- [x] **Owner-Split unter PowerShell 7 repariert** (2026-10-10, `.Split('\\')` trennte dort am Doppel-Backslash)
 
 - [ ] **Credential-Abgleich normalisieren** (neu)
-  - `Check-DnsCredentialSettings` (Zeile 90): vergleicht `sAMAccountName` mit dem CN aus `GetStrongUsers`
+  - `Check-DnsCredentialSettings` (Zeile 82): vergleicht `sAMAccountName` mit dem CN aus `GetStrongUsers`
   - Problem: Privilegierte Benutzer-Credentials werden nicht erkannt, wenn CN ≠ sAMAccountName (vgl. Akamai-Issue #11)
   - Lösung: `GetStrongUsers` gibt `SamAccountName` zurück; in Testumgebung verifizieren
 
 ### 🟡 Priorität 2 - Performance-Optimierungen
 
 - [x] **GetStrongUsers: `-Recursive`** (durch ForumSchlampes Fork erledigt)
-- [ ] **GetStrongUsers: `+=` in Schleife durch Pipeline ersetzen** (Zeilen 55-58, geringe Priorität)
+- [ ] **GetStrongUsers: `+=` in Schleife durch Pipeline ersetzen** (Zeilen 47-50, geringe Priorität)
 
-- [ ] **DNS-Record-Scanning optimieren** (Zeilen 284-322)
+- [ ] **DNS-Record-Scanning optimieren** (Zeilen 280-318)
   - DHCP-Credentials in HashTable cachen für O(1) Lookup
   - Nested Loop O(n*m) vermeiden
   - Hinweis: Hauptkosten verursacht `get-acl` pro Record
@@ -46,11 +36,8 @@ _Keine offenen Tasks_
   - Einheitliche Namenskonvention für alle Funktionen
 
 - [ ] **Code-Duplikation reduzieren**
-  - IPv4/IPv6-Prüfungen in `Check-DhcpNameProtectionSettings` (Zeilen 118-179) und `Check-DhcpDynamicNameUpdateSettings` (Zeilen 181-242) in Hilfsfunktionen auslagern
+  - IPv4/IPv6-Prüfungen in `Check-DhcpNameProtectionSettings` (Zeilen 110-171) und `Check-DhcpDynamicNameUpdateSettings` (Zeilen 173-234) in Hilfsfunktionen auslagern
 
-- [ ] **Kleinkram**
-  - Typografische Anführungszeichen in Zeile 279 (`“S-1-5-11“`) ersetzen
-  - Ungenutzte Initialisierungen in Zeilen 274-275 entfernen
 
 - [ ] **Strukturierte Ausgabe implementieren**
   - PSCustomObject statt nur Write-Host zurückgeben
@@ -66,7 +53,7 @@ _Keine offenen Tasks_
 
 - [ ] **Inline-Kommentare ergänzen**
   - Komplexe Logik in `Find-VulnerableDnsRecords` dokumentieren
-  - ACL-Prüfungen erklären (Zeilen 288-321)
+  - ACL-Prüfungen erklären (Zeilen 284-317)
   - Sicherheitsrisiken in Kommentaren beschreiben
 
 - [ ] **Comment-Based Help verbessern**

@@ -19,6 +19,10 @@ Basis ist jetzt [ForumSchlampe/Invoke-DHCPCheckup](https://github.com/ForumSchla
 
 ### Behoben
 - Falsche SID für Domain Admins (`-516` statt `-512`) (michaelbast)
+- Von DHCP-Credentials besessene DNS-Einträge wurden unter PowerShell 7 nicht erkannt (`.Split('\\')` trennte dort am Doppel-Backslash statt am Backslash)
+- Bei nur einem aktiven DHCP-Server wurden die Credential-Paare falsch zerlegt; Credentials mit Leerzeichen brachen den String-Split
+- Nicht erreichbare DHCP-Server werden per `try/catch` mit `-ErrorAction Stop` erkannt statt über das globale `$error`-Array
+- `Check-DnsUpdateProxyMembership` und `Find-VulnerableDnsRecords` bekommen `domainName`/`dnsServerName` als Parameter statt über den Scope der Hauptfunktion
 
 ### Geplant
 - Export-Funktion für Audit-Ergebnisse

@@ -17,23 +17,15 @@ function GetActiveActiveDhcpServers
     foreach ($server in $DhcpServers)
     {
         # Check if the server is responding
-        $error.Clear()
         try
         {
-            $res = Get-DhcpServerSetting -ComputerName $server.DnsName -ErrorAction SilentlyContinue
+            $null = Get-DhcpServerSetting -ComputerName $server.DnsName -ErrorAction Stop
+            $activeServers += $server
         }
         catch
         {
-            
-        }
-
-        if (!$error[0])
-        {
-            $activeServers += $server
-        }
-        else
-        {
             Write-Host "[*] DHCP server $($server.DnsName.ToUpper()) is not responding!"
+            Write-Verbose "Get-DhcpServerSetting failed for $($server.DnsName): $_"
         }
     }
 
@@ -84,7 +76,7 @@ function Check-DnsCredentialSettings
         if ($serverDnsCredential.UserName -ne "")
         {
             Write-Host "[*] $($serverDisplayName) - The credential used to create and own DNS records by the server is: '$($serverDnsCredential.UserName)'"
-            $DhcpCredentials += ,($serverDnsCredential.UserName, $serverDisplayName)
+            $DhcpCredentials += [PSCustomObject]@{ Credential = $serverDnsCredential.UserName; Server = $serverDisplayName }
 
             # Check if the DNS credential is strong
             if ($serverDnsCredential.UserName -in $strongGroupsMembers)
@@ -98,7 +90,7 @@ function Check-DnsCredentialSettings
         else
         {
             Write-Host "[*] $($serverDisplayName) - DNS credential is not configured. The machine account '$($serverCN)$' would be used to create and own DNS records."
-            $DhcpCredentials += ,(($serverCN + "$"), $serverDisplayName)
+            $DhcpCredentials += [PSCustomObject]@{ Credential = ($serverCN + "$"); Server = $serverDisplayName }
         
             # Check if the DNS credential is strong
             if ($serverCN -in $strongGroupsMembers)
@@ -243,6 +235,10 @@ function Check-DhcpDynamicNameUpdateSettings
 
 function Check-DnsUpdateProxyMembership
 {
+    param(
+    [parameter(Mandatory=$True)][String]$domainName
+    )
+
     $allDhcpServers = Get-DhcpServerInDC
 
     # Check for members of DNSUpdateproxy
@@ -266,17 +262,17 @@ function Check-DnsUpdateProxyMembership
 function Find-VulnerableDnsRecords
 {
     param(
-    [parameter(Mandatory=$True)][String[]]$DhcpCredentials
+    [parameter(Mandatory=$True)][PSCustomObject[]]$DhcpCredentials,
+    [parameter(Mandatory=$True)][String]$domainName,
+    [parameter(Mandatory=$True)][String]$dnsServerName
     )
     # Scan the permissions of all the DNS records in the zone to find vulnerable ones
 
     $authenticatedUsersRecords = @()
-    $authenticatedUsersWriteAuthenticatedUserSID = @()
-    $authenticatedUsersWriteAuthenticatedUserUser = @()
     $vulnerableRecords = @()
     $printed = $False
 
-    $authenticatedUsersWriteAuthenticatedUserSID = New-Object System.Security.Principal.SecurityIdentifier(“S-1-5-11“)
+    $authenticatedUsersWriteAuthenticatedUserSID = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-11")
     $authenticatedUsersWriteAuthenticatedUserUser = $authenticatedUsersWriteAuthenticatedUserSID.Translate( [System.Security.Principal.NTAccount])
     
     $DnsRecords = Get-DnsServerResourceRecord -ZoneName $domainName -ComputerName $dnsServerName
@@ -302,12 +298,12 @@ function Find-VulnerableDnsRecords
         foreach ($cred in $DhcpCredentials)
         {
            
-            $DhcpServerCredential = $cred.split(' ')[0]
-            $DhcpServerName = $cred.split(' ')[1]
+            $DhcpServerCredential = $cred.Credential
+            $DhcpServerName = $cred.Server
 
             if ($recordAcl.Owner -ne $null)
             {
-                if ($recordAcl.Owner.Split('\\')[1] -eq $DhcpServerCredential)
+                if ($recordAcl.Owner.Split('\')[-1] -eq $DhcpServerCredential)
                 {
                     if (!($recordDisplayName -in $vulnerableRecords))
                     {
@@ -439,11 +435,11 @@ By Ori David of Akamai SIG
 
     Write-Host "`n-----------------------------------------`nChecking DNSUpdateProxy Group Membership`n-----------------------------------------`n"
 
-    Check-DnsUpdateProxyMembership
+    Check-DnsUpdateProxyMembership -domainName $domainName
 
 
     Write-Host "`n-----------------------------------------`nSearching For Vulnerable DNS Records`n-----------------------------------------`n"
-   
-    Find-VulnerableDnsRecords -DhcpCredentials $DhcpCredentials
+
+    Find-VulnerableDnsRecords -DhcpCredentials $DhcpCredentials -domainName $domainName -dnsServerName $dnsServerName
 
 }
